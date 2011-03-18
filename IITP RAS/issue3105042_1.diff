@@ -1,0 +1,1382 @@
+Index: examples/data-collection/attribute-probe.cc
+===================================================================
+new file mode 100644
+--- /dev/null
++++ b/examples/data-collection/attribute-probe.cc
+@@ -0,0 +1,61 @@
++/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
++/*
++ * Copyright (c) 2010 IITP RAS
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation;
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * This is a proof of consept script for the Data Collection Framewotk API proposal
++ *
++ * Authors: Pavel Boyko <boyko@iitp.ru>
++ *          Kirill Andreev <andreev@iitp.ru>
++ */
++
++#include "attribute-probe.h"
++#include "ns3/simulator.h"
++#include "ns3/string.h"
++
++namespace ns3 {
++
++NS_OBJECT_ENSURE_REGISTERED (AttributeProbe);
++
++TypeId 
++AttributeProbe::GetTypeId ()
++{
++  static TypeId tid = TypeId ("ns3::AttributeProbe")
++    .SetParent<StringProbe> ()
++    .AddConstructor<AttributeProbe> ()
++    ;
++  return tid;
++}
++
++AttributeProbe::~AttributeProbe ()
++{
++}
++
++void
++AttributeProbe::SetInput (Ptr<Object> obj, std::string const & path)
++{
++  NS_ASSERT (obj != 0);
++  Simulator::Schedule (m_stop, & AttributeProbe::Report, this, obj, path);  
++}
++
++void
++AttributeProbe::Report (Ptr<Object> obj, std::string const & path)
++{
++  StringValue str;
++  obj->GetAttribute (path, str);
++  Output (Simulator::Now(), str.SerializeToString (0));
++}
++
++}
+Index: examples/data-collection/attribute-probe.h
+===================================================================
+new file mode 100644
+--- /dev/null
++++ b/examples/data-collection/attribute-probe.h
+@@ -0,0 +1,47 @@
++/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
++/*
++ * Copyright (c) 2010 IITP RAS
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation;
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * This is a proof of consept script for the Data Collection Framewotk API proposal
++ *
++ * Authors: Pavel Boyko <boyko@iitp.ru>
++ *          Kirill Andreev <andreev@iitp.ru>
++ */
++#pragma once
++
++#include "string-probe.h"
++#include "ns3/traced-callback.h"
++#include "ns3/object.h"
++
++namespace ns3 {
++
++/**
++ * \brief Probe returning attribute value at the end of data collection window (as {time, string})
++ */
++class AttributeProbe : public StringProbe
++{
++public:
++  static TypeId GetTypeId ();
++  virtual ~AttributeProbe ();
++
++  /// Set probed attribute
++  void SetInput (Ptr<Object> obj, std::string const & attribute);
++
++private:
++  void Report (Ptr<Object> obj, std::string const & path);
++};
++
++}//namespace ns3
+Index: examples/data-collection/count-probe.cc
+===================================================================
+new file mode 100644
+--- /dev/null
++++ b/examples/data-collection/count-probe.cc
+@@ -0,0 +1,127 @@
++/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
++/*
++ * Copyright (c) 2010 IITP RAS
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation;
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * This is a proof of consept script for the Data Collection Framewotk API proposal
++ *
++ * Authors: Pavel Boyko <boyko@iitp.ru>
++ *          Kirill Andreev <andreev@iitp.ru>
++ */
++
++#include "count-probe.h"
++#include "ns3/trace-source-accessor.h"
++#include "ns3/simulator.h"
++#include "ns3/config.h"
++#include "ns3/log.h"
++
++namespace ns3 {
++
++NS_LOG_COMPONENT_DEFINE ("CountProbe");
++NS_OBJECT_ENSURE_REGISTERED (CountProbe);
++
++TypeId 
++CountProbe::GetTypeId ()
++{
++  static TypeId tid = TypeId ("ns3::CountProbe")
++    .SetParent<DoubleProbe> ()
++    .AddConstructor<CountProbe> ()
++    ;
++  return tid;
++}
++
++void
++CountProbe::SetVoidInput (std::string path)
++{
++  NS_LOG_FUNCTION (path);
++  m_name = path;
++  Simulator::Schedule (m_start, &CountProbe::ConnectVoid, this);
++  Simulator::Schedule (m_stop, &CountProbe::DisconnectVoid, this);
++}
++
++void
++CountProbe::SetPacketInput (std::string path)
++{  
++  NS_LOG_FUNCTION (path);
++  m_name = path;
++  Simulator::Schedule (m_start, &CountProbe::ConnectPacket, this);
++  Simulator::Schedule (m_stop, &CountProbe::DisconnectPacket, this);
++}
++
++void
++CountProbe::ConnectVoid ()
++{
++  NS_LOG_FUNCTION_NOARGS ();
++  NS_ASSERT (m_period > Seconds (0));
++  NS_ASSERT (m_stop > m_start);
++  Config::ConnectWithoutContext (m_name, MakeCallback (& CountProbe::Count, this));
++  m_reportEvent = Simulator::Schedule (m_period, &CountProbe::Report, this);
++}
++
++void
++CountProbe::ConnectPacket ()
++{
++  NS_LOG_FUNCTION_NOARGS ();
++  NS_ASSERT (m_period > Seconds (0));
++  NS_ASSERT (m_stop > m_start);
++  Config::ConnectWithoutContext (m_name, MakeCallback (& CountProbe::CountPackets, this));
++  m_reportEvent = Simulator::Schedule (m_period, &CountProbe::Report, this);
++}
++
++void
++CountProbe::Report ()
++{
++  NS_LOG_FUNCTION_NOARGS ();
++  NS_ASSERT (! m_reportEvent.IsRunning ());
++  Output (Simulator::Now (), m_count);
++  m_count = 0;
++  m_reportEvent = Simulator::Schedule (m_period, &CountProbe::Report, this);
++}
++
++void
++CountProbe::DisconnectPacket ()
++{
++  Config::DisconnectWithoutContext (m_name, MakeCallback (&CountProbe::CountPackets, this));
++  StopProbe ();
++}
++
++void
++CountProbe::DisconnectVoid ()
++{
++  Config::DisconnectWithoutContext (m_name, MakeCallback (&CountProbe::Count, this));
++  StopProbe ();
++}
++
++void
++CountProbe::StopProbe ()
++{
++  NS_LOG_FUNCTION_NOARGS();
++  m_reportEvent.Cancel ();
++  Output (Simulator::Now (), m_count);
++}
++
++void
++CountProbe::Count ()
++{
++  NS_LOG_FUNCTION_NOARGS ();
++  m_count ++;
++}
++
++void
++CountProbe::CountPackets (Ptr<const Packet>)
++{
++  Count ();
++}
++}//namespace ns3
+Index: examples/data-collection/count-probe.h
+===================================================================
+new file mode 100644
+--- /dev/null
++++ b/examples/data-collection/count-probe.h
+@@ -0,0 +1,71 @@
++/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
++/*
++ * Copyright (c) 2010 IITP RAS
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation;
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * This is a proof of consept script for the Data Collection Framewotk API proposal
++ *
++ * Authors: Pavel Boyko <boyko@iitp.ru>
++ *          Kirill Andreev <andreev@iitp.ru>
++ */
++#pragma once
++
++#include "double-probe.h"
++#include "ns3/event-id.h"
++#include "ns3/packet.h"
++#include <string>
++
++namespace ns3 {
++
++/**
++ * \brief This probes counts the total number of input events
++ */
++class CountProbe : public DoubleProbe
++{
++public:
++  static TypeId GetTypeId ();
++  CountProbe () {}
++  ~CountProbe () {}
++
++  //\name Set input trace source. Path is a connect string, e.g. "Names/obj/Trace". The variety of Set*Input methods is needed to count events with different signatures.
++  //\{
++  /// Input trace source signature is (void)
++  void SetVoidInput (std::string path);
++  /// Input trace source signature is (Ptr<const Packet>)
++  void SetPacketInput (std::string path);
++  //\}
++
++private:
++  /// Input path
++  std::string m_name;
++  /// Counter value
++  double m_count;
++  /// Next report event
++  EventId m_reportEvent;
++
++private:
++  void ConnectVoid (); 
++  void DisconnectVoid ();
++  void Count ();
++
++  void ConnectPacket ();
++  void DisconnectPacket ();
++  void CountPackets (Ptr<const Packet> packet);
++
++  void Report ();
++  void StopProbe ();
++};
++
++}
+Index: examples/data-collection/csv-collector.cc
+===================================================================
+new file mode 100644
+--- /dev/null
++++ b/examples/data-collection/csv-collector.cc
+@@ -0,0 +1,106 @@
++/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
++/*
++ * Copyright (c) 2010 IITP RAS
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation;
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * This is a proof of consept script for the Data Collection Framewotk API proposal
++ *
++ * Authors: Pavel Boyko <boyko@iitp.ru>
++ *          Kirill Andreev <andreev@iitp.ru>
++ */
++#include "csv-collector.h"
++
++namespace ns3 
++{
++
++CsvCollector::ProbeDescriptor::ProbeDescriptor (Ptr<Probe> probe, std::string name)
++      : m_probe (probe), m_of (name.c_str ())
++{
++  if (! m_of.is_open()) NS_FATAL_ERROR ("Can't open output file \"" << name << "\"");
++}
++
++CsvCollector::ProbeDescriptor::~ProbeDescriptor ()
++{
++  m_of.close ();
++}
++
++TypeId
++CsvCollector::GetTypeId ()
++{
++  static TypeId tid = TypeId ("ns3::CsvCollector")
++    .SetParent<Object> ()
++    .AddConstructor<CsvCollector> ()
++    ;
++  return tid;
++}
++
++CsvCollector::CsvCollector ()
++{
++}
++
++CsvCollector::~CsvCollector ()
++{
++  for (ProbeMap::iterator i = m_probes.begin (); i != m_probes.end (); i ++)
++  {
++    delete i->second;
++  }
++  m_probes.clear ();
++}
++
++void
++CsvCollector::AddDoubleProbe (Ptr<DoubleProbe> p, std::string probeName)
++{
++  // check that no probeName already registered
++  NS_ASSERT (m_probes.find (probeName) == m_probes.end());
++
++  // Connect to probe "Output" trace source
++  p->TraceConnect ("Output", probeName, MakeCallback (&CsvCollector::PrintDoubleProbe , this));
++
++  // Remember probe
++  ProbeDescriptor*  desc  = new ProbeDescriptor (p, probeName + ".csv");
++  m_probes.insert (std::make_pair (probeName, desc));
++  desc->m_of << "time,value" << std::endl << std::flush;
++}
++
++void
++CsvCollector::PrintDoubleProbe (std::string context, Time time, double val)
++{
++  ProbeMap::iterator probe = m_probes.find (context);
++  NS_ASSERT (probe != m_probes.end ());
++  ProbeDescriptor* desc = probe->second;
++  desc->m_of << time.GetSeconds () << "," << val << std::endl << std::flush;  
++}
++
++void
++CsvCollector::AddStringProbe (Ptr<StringProbe> p, std::string probeName)
++{
++  NS_ASSERT (m_probes.find (probeName) == m_probes.end());
++  p->TraceConnect ("Output", probeName, MakeCallback (&CsvCollector::PrintStringProbe , this));
++  ProbeDescriptor*  desc  = new ProbeDescriptor (p, probeName + ".csv");
++  m_probes.insert (std::make_pair (probeName, desc));
++  desc->m_of << "time,value" << std::endl << std::flush;
++}
++
++void
++CsvCollector::PrintStringProbe (std::string context, Time time, std::string const & val)
++{
++  ProbeMap::iterator probe = m_probes.find (context);
++  NS_ASSERT (probe != m_probes.end ());
++  ProbeDescriptor* desc = probe->second;
++  desc->m_of << time.GetSeconds () << "," << val << std::endl << std::flush;  
++}
++
++
++}
+Index: examples/data-collection/csv-collector.h
+===================================================================
+new file mode 100644
+--- /dev/null
++++ b/examples/data-collection/csv-collector.h
+@@ -0,0 +1,81 @@
++/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
++/*
++ * Copyright (c) 2010 IITP RAS
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation;
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * This is a proof of consept script for the Data Collection Framewotk API proposal
++ *
++ * Authors: Pavel Boyko <boyko@iitp.ru>
++ *          Kirill Andreev <andreev@iitp.ru>
++ */
++#pragma once
++
++#include "double-probe.h"
++#include "string-probe.h"
++#include "ns3/object.h"
++#include "ns3/nstime.h"
++#include "ns3/traced-callback.h"
++#include <string>
++#include <fstream>
++
++#include <map>
++
++namespace ns3 {
++
++/**
++ * \brief CSV collector stores every supported probe as {time, value} series in the dedicated CSV file
++ *
++ * Supported probes:
++ *  - DoubleProbe
++ * 
++ * This is proof of concept implementation, many useful features can be supported in the future.
++ */
++class CsvCollector : public Object
++{
++public:
++  static TypeId GetTypeId ();
++  CsvCollector ();
++  ~CsvCollector ();
++
++  /**
++   * Register new double probe
++   *
++   * \param p         The probe
++   * \param probeName Probe name, should be unique in the context of this collector
++   */
++  void AddDoubleProbe (Ptr<DoubleProbe> p, std::string name);
++  /// Register new string probe
++  void AddStringProbe (Ptr<StringProbe> p, std::string name);
++
++private:
++  /// Internal probe description
++  struct ProbeDescriptor
++  {
++    Ptr<Probe> m_probe;
++    std::ofstream m_of;
++    ProbeDescriptor (Ptr<Probe> probe, std::string name);
++    ~ProbeDescriptor ();
++  };
++
++private:
++  typedef std::map<std::string, ProbeDescriptor* > ProbeMap;
++  ProbeMap m_probes;
++
++private:
++  void PrintDoubleProbe (std::string context, Time time, double val);
++  void PrintStringProbe (std::string context, Time time, std::string const & val);
++};
++
++}
+Index: examples/data-collection/div-probe.cc
+===================================================================
+new file mode 100644
+--- /dev/null
++++ b/examples/data-collection/div-probe.cc
+@@ -0,0 +1,112 @@
++/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
++/*
++ * Copyright (c) 2010 IITP RAS
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation;
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * This is a proof of consept script for the Data Collection Framewotk API proposal
++ *
++ * Authors: Pavel Boyko <boyko@iitp.ru>
++ *          Kirill Andreev <andreev@iitp.ru>
++ */
++
++#include "div-probe.h"
++#include "ns3/config.h"
++#include "ns3/log.h"
++
++namespace ns3 {
++
++NS_LOG_COMPONENT_DEFINE ("DivProbe");
++NS_OBJECT_ENSURE_REGISTERED (DivProbe);
++
++TypeId 
++DivProbe::GetTypeId ()
++{
++  static TypeId tid = TypeId ("ns3::DivProbe")
++    .SetParent<DoubleProbe> ()
++    .AddConstructor<DivProbe> ()
++    ;
++  return tid;
++}
++
++DivProbe::DivProbe ()
++  :
++    m_lastNom (0),
++    m_lastDenom (0),
++    m_lastNomUpd (false),
++    m_lastDenomUpd (false),
++    m_lastNomTs (Seconds (0)),
++    m_lastDenomTs (Seconds(0))
++{
++}
++
++void
++DivProbe::StopProbe ()
++{
++  NS_LOG_FUNCTION_NOARGS ();
++  Config::DisconnectWithoutContext (m_nominatorName, MakeCallback (&DivProbe::ProcessNominator, this));
++  Config::DisconnectWithoutContext (m_denominatorName, MakeCallback (&DivProbe::ProcessDenominator, this));
++}
++
++void
++DivProbe::SetInput (std::string nominator, std::string denominator)
++{
++  NS_LOG_FUNCTION_NOARGS ();
++
++  m_nominatorName = nominator;
++  m_denominatorName = denominator;
++
++  Simulator::Schedule (m_start, &DivProbe::ConnectInput, this);
++  Simulator::Schedule (m_stop, &DivProbe::StopProbe, this);
++}
++
++void
++DivProbe::ConnectInput ()
++{
++  NS_LOG_FUNCTION_NOARGS ();
++
++  Config::ConnectWithoutContext (m_nominatorName, MakeCallback (& DivProbe::ProcessNominator, this));
++  Config::ConnectWithoutContext (m_denominatorName, MakeCallback (& DivProbe::ProcessDenominator, this));
++}
++
++void
++DivProbe::ProcessNominator (Time t, double val)
++{
++  NS_LOG_FUNCTION (t);
++  m_lastNom = val;
++  m_lastNomUpd = true;
++  m_lastNomTs = t;
++  Report ();
++}
++
++void
++DivProbe::ProcessDenominator (Time t, double val)
++{
++  NS_LOG_FUNCTION (t);
++  m_lastDenom = val;
++  m_lastDenomUpd = true;
++  m_lastDenomTs = t;
++  Report ();
++}
++
++void
++DivProbe::Report ()
++{
++  if (m_lastNomUpd != m_lastDenomUpd) return;
++
++  NS_ASSERT_MSG (m_lastDenomTs == m_lastNomTs, "Nominator and denominator time series are not synchronous.");
++  Output (m_lastDenomTs, m_lastNom / m_lastDenom);
++  m_lastNomUpd = m_lastDenomUpd = false;
++}
++}//namespace ns3
+Index: examples/data-collection/div-probe.h
+===================================================================
+new file mode 100644
+--- /dev/null
++++ b/examples/data-collection/div-probe.h
+@@ -0,0 +1,60 @@
++/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
++/*
++ * Copyright (c) 2010 IITP RAS
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation;
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * This is a proof of consept script for the Data Collection Framewotk API proposal
++ *
++ * Authors: Pavel Boyko <boyko@iitp.ru>
++ *          Kirill Andreev <andreev@iitp.ru>
++ */
++#pragma once
++
++#include "double-probe.h"
++#include "ns3/simulator.h"
++#include "ns3/traced-callback.h"
++#include <string>
++
++namespace ns3 {
++
++/**
++ * \brief Probe to divide 2 syncronous time series
++ */
++class DivProbe : public DoubleProbe
++{
++public:
++  static TypeId GetTypeId ();
++  DivProbe ();
++  virtual ~DivProbe () {}
++
++  /// Set input trace sources. Both nominator and denominator trace sources must have signature (Time, double) and must fire simultaneously.
++  void SetInput (std::string nominator, std::string denominator);
++
++private:
++  std::string m_nominatorName;
++  std::string m_denominatorName;
++  double m_lastNom, m_lastDenom;
++  bool m_lastNomUpd, m_lastDenomUpd;
++  Time m_lastNomTs, m_lastDenomTs;
++
++private:
++  void ConnectInput ();
++  void Report ();
++  void StopProbe ();
++  void ProcessNominator (Time t, double val);
++  void ProcessDenominator (Time t, double val);
++};
++
++}
+Index: examples/data-collection/double-probe.cc
+===================================================================
+new file mode 100644
+--- /dev/null
++++ b/examples/data-collection/double-probe.cc
+@@ -0,0 +1,55 @@
++/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
++/*
++ * Copyright (c) 2010 IITP RAS
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation;
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * This is a proof of consept script for the Data Collection Framewotk API proposal
++ *
++ * Authors: Pavel Boyko <boyko@iitp.ru>
++ *          Kirill Andreev <andreev@iitp.ru>
++ */
++
++#include "double-probe.h"
++#include "ns3/trace-source-accessor.h"
++
++namespace ns3 {
++
++NS_OBJECT_ENSURE_REGISTERED (DoubleProbe);
++
++TypeId 
++DoubleProbe::GetTypeId ()
++{
++  static TypeId tid = TypeId ("ns3::DoubleProbe")
++    .SetParent<Probe> ()
++    .AddConstructor<DoubleProbe> ()
++    .AddTraceSource ("Output",
++         "<Time, Double> series output",
++         MakeTraceSourceAccessor (&DoubleProbe::m_output));
++    ;
++  return tid;
++}
++
++DoubleProbe::~DoubleProbe ()
++{
++}
++
++void
++DoubleProbe::Output (Time t, double x)
++{
++  m_output (t, x);
++}
++
++
++}
+Index: examples/data-collection/double-probe.h
+===================================================================
+new file mode 100644
+--- /dev/null
++++ b/examples/data-collection/double-probe.h
+@@ -0,0 +1,46 @@
++/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
++/*
++ * Copyright (c) 2010 IITP RAS
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation;
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * This is a proof of consept script for the Data Collection Framewotk API proposal
++ *
++ * Authors: Pavel Boyko <boyko@iitp.ru>
++ *          Kirill Andreev <andreev@iitp.ru>
++ */
++#pragma once
++
++#include "probe.h"
++#include "ns3/traced-callback.h"
++
++namespace ns3 {
++
++/**
++ * \brief Base class for all probes collecting doubles (as {time, double} series)
++ */
++class DoubleProbe : public Probe
++{
++public:
++  static TypeId GetTypeId ();
++  virtual ~DoubleProbe ();
++
++  /// Output (time, double)
++  void Output (Time t, double x);
++
++private:
++  TracedCallback<Time, double> m_output;
++};
++
++}//namespace ns3
+Index: examples/data-collection/main.cc
+===================================================================
+new file mode 100644
+--- /dev/null
++++ b/examples/data-collection/main.cc
+@@ -0,0 +1,251 @@
++/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
++/*
++ * Copyright (c) 2010 IITP RAS
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation;
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * This is a proof of consept script for the Data Collection Framewotk API proposal
++ *
++ * Authors: Pavel Boyko <boyko@iitp.ru>
++ *          Kirill Andreev <andreev@iitp.ru>
++ */
++
++#include "csv-collector.h"
++#include "count-probe.h"
++#include "div-probe.h"
++#include "attribute-probe.h"
++
++#include "ns3/olsr-module.h"
++#include "ns3/core-module.h"
++#include "ns3/common-module.h"
++#include "ns3/node-module.h"
++#include "ns3/helper-module.h"
++#include "ns3/mobility-module.h"
++#include "ns3/contrib-module.h"
++#include "ns3/wifi-module.h" 
++#include "ns3/v4ping-helper.h"
++#include <iostream>
++#include <cmath>
++
++using namespace ns3;
++
++/**
++ * \brief Test script.
++ * 
++ * This script creates 1-dimensional grid topology and then ping last node from the first one:
++ * 
++ * [10.0.0.1] <-- step --> [10.0.0.2]
++ * 
++ * ping 10.0.0.2
++ */
++class Example 
++{
++public:
++  Example ();
++  /// Configure script parameters, \return true on successful configuration
++  bool Configure (int argc, char **argv);
++  /// Run simulation
++  void Run ();
++  /// Report results
++  void Report (std::ostream & os);
++  
++private:
++  ///\name parameters
++  //\{
++  /// Number of nodes
++  uint32_t size;
++  /// Distance between nodes, meters
++  double step;
++  /// Simulation time, seconds
++  double totalTime;
++  //\}
++  
++  ///\name network
++  //\{
++  NodeContainer nodes;
++  NetDeviceContainer devices;
++  Ipv4InterfaceContainer interfaces;
++  //\}
++  
++
++  /// Data collector
++  Ptr<CsvCollector> collector;
++
++private:
++  void CreateNodes ();
++  void CreateDevices ();
++  void InstallInternetStack ();
++  void InstallApplications ();
++  
++  void SetupDataCollection (); ///<============================================= The most interesting part here ===|
++};
++
++int main (int argc, char **argv)
++{
++  Example test;
++  if (! test.Configure(argc, argv)) 
++    NS_FATAL_ERROR ("Configuration failed. Aborted.");
++  
++  test.Run ();
++  test.Report (std::cout);
++  return 0;
++}
++
++//-----------------------------------------------------------------------------
++Example::Example () :
++  size (2),
++  step (120),
++  totalTime (10)
++{
++}
++
++bool
++Example::Configure (int argc, char **argv)
++{
++  CommandLine cmd;
++  
++  cmd.AddValue ("time", "Simulation time, s.", totalTime);
++  
++  cmd.Parse (argc, argv);
++  return true;
++}
++
++void
++Example::Run ()
++{
++  CreateNodes ();
++  CreateDevices ();
++  InstallInternetStack ();
++  InstallApplications ();
++  
++  SetupDataCollection ();
++
++  
++  std::cout << "Starting simulation for " << totalTime << " s ...\n";
++  
++  Simulator::Stop (Seconds (totalTime));
++  Simulator::Run ();
++  Simulator::Destroy ();
++}
++
++void
++Example::Report (std::ostream &)
++{ 
++}
++
++void
++Example::CreateNodes ()
++{
++  std::cout << "Creating " << (unsigned)size << " nodes " << step << " m apart.\n";
++  nodes.Create (size);
++  // Name nodes
++  for (uint32_t i = 0; i < size; ++i)
++     {
++       std::ostringstream os;
++       os << "node-" << i;
++       Names::Add (os.str (), nodes.Get (i));
++     }
++  // Create static grid
++  MobilityHelper mobility;
++  mobility.SetPositionAllocator ("ns3::GridPositionAllocator",
++                                "MinX", DoubleValue (0.0),
++                                "MinY", DoubleValue (0.0),
++                                "DeltaX", DoubleValue (step),
++                                "DeltaY", DoubleValue (0),
++                                "GridWidth", UintegerValue (size),
++                                "LayoutType", StringValue ("RowFirst"));
++  mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
++  mobility.Install (nodes);
++}
++
++void
++Example::CreateDevices ()
++{
++  NqosWifiMacHelper wifiMac = NqosWifiMacHelper::Default ();
++  wifiMac.SetType ("ns3::AdhocWifiMac");
++  YansWifiPhyHelper wifiPhy = YansWifiPhyHelper::Default ();
++  YansWifiChannelHelper wifiChannel = YansWifiChannelHelper::Default ();
++  wifiPhy.SetChannel (wifiChannel.Create ());
++  WifiHelper wifi = WifiHelper::Default ();
++  wifi.SetRemoteStationManager ("ns3::ConstantRateWifiManager", "DataMode", StringValue ("OfdmRate6Mbps"));
++  devices = wifi.Install (wifiPhy, wifiMac, nodes); 
++  wifiPhy.EnablePcapAll (std::string ("olsr"));
++}
++
++void
++Example::InstallInternetStack ()
++{
++  OlsrHelper olsr;
++  InternetStackHelper stack;
++  stack.SetRoutingHelper (olsr);
++  stack.Install (nodes);
++  Ipv4AddressHelper address;
++  address.SetBase ("10.0.0.0", "255.0.0.0");
++  interfaces = address.Assign (devices);
++}
++
++void
++Example::InstallApplications ()
++{
++  V4PingHelper ping (interfaces.GetAddress (size - 1));
++  ping.SetAttribute ("Verbose", BooleanValue (true));
++  
++  ApplicationContainer p = ping.Install (nodes.Get (0));
++  p.Start (Seconds (0));
++  p.Stop (Seconds (totalTime));
++
++  Names::Add ("ping", p.Get(0)); // Name application to simplify data collection setup
++}
++
++void 
++Example::SetupDataCollection ()
++{
++  // Setup data collection window and periodicity
++  Config::SetDefault ("ns3::Probe::Start", TimeValue (Seconds(0)));
++  Config::SetDefault ("ns3::Probe::Stop",  TimeValue (Seconds (totalTime)));
++  Config::SetDefault ("ns3::Probe::Period",  TimeValue (Seconds(2)));
++  
++  // Count TX and RX packets
++  collector = CreateObject<CsvCollector> ();
++  
++  // Count transmitted echo requests
++  Ptr<CountProbe> p1 = CreateObject<CountProbe> ();
++  p1->SetVoidInput ("Names/ping/Tx");
++  Names::Add ("PingTxProbe", p1);
++  collector->AddDoubleProbe(p1, "ping-tx");
++
++  // Count received echo replies
++  Ptr<CountProbe> p2 = CreateObject<CountProbe> ();
++  p2->SetVoidInput ("Names/ping/Rx");
++  Names::Add ("PingRxProbe", p2);  
++  collector->AddDoubleProbe(p2, "ping-rx");
++  
++  // Total number of packets sent 
++  // This is an example of "global" probe, note "*" in the input path
++  Ptr<CountProbe> p3 = CreateObject<CountProbe> ();
++  p3->SetPacketInput("NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Mac/MacTx");
++  collector->AddDoubleProbe(p3, "wifi-tx");
++    
++  // Calculate PDR
++  // This is an example of probe tree
++  Ptr<DivProbe> p4 = CreateObject<DivProbe> ();
++  p4->SetInput ("Names/PingRxProbe/Output", "Names/PingTxProbe/Output");
++  collector->AddDoubleProbe (p4, "ping-pdr");
++
++  // Store ping payload size to the output database   
++  // Note that current API is not-uniform, better written as p5->SetInput("Names/ping/Size"), but I don't know how to implement
++  Ptr<AttributeProbe> p5 = CreateObject<AttributeProbe> ();
++  p5->SetInput (Names::Find<Object> ("ping"), "Size");      
++  collector->AddStringProbe (p5, "ping-size");
++}
+Index: examples/data-collection/probe.cc
+===================================================================
+new file mode 100644
+--- /dev/null
++++ b/examples/data-collection/probe.cc
+@@ -0,0 +1,60 @@
++/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
++/*
++ * Copyright (c) 2010 IITP RAS
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation;
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * This is a proof of consept script for the Data Collection Framewotk API proposal
++ *
++ * Authors: Pavel Boyko <boyko@iitp.ru>
++ *          Kirill Andreev <andreev@iitp.ru>
++ */
++
++#include "probe.h"
++
++namespace ns3 {
++
++NS_OBJECT_ENSURE_REGISTERED (Probe);
++
++TypeId 
++Probe::GetTypeId ()
++{
++  static TypeId tid = TypeId ("ns3::Probe")
++    .SetParent<Object> ()
++    .AddConstructor<Probe> ()
++    .AddAttribute ( "Start",
++                    "A moment when a probe starts collecting data",
++                    TimeValue (Seconds (0)), MakeTimeAccessor (&Probe::m_start), MakeTimeChecker ())
++    .AddAttribute ( "Stop",
++                    "A moment when a probe stops collecting data",
++                    TimeValue (Seconds (1)), MakeTimeAccessor (&Probe::m_stop), MakeTimeChecker ())
++    .AddAttribute ( "Period",
++                    "Time step for periodic probes",
++                    TimeValue (Seconds (1)), MakeTimeAccessor (&Probe::m_period), MakeTimeChecker ())
++  ;
++  return tid;
++}
++
++Probe::Probe () :
++  m_start (Seconds(0)),
++  m_stop (Seconds (1)),
++  m_period (Seconds (1))
++{
++}
++
++Probe::~Probe ()
++{
++}
++
++}//namespace ns3
+Index: examples/data-collection/probe.h
+===================================================================
+new file mode 100644
+--- /dev/null
++++ b/examples/data-collection/probe.h
+@@ -0,0 +1,53 @@
++/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
++/*
++ * Copyright (c) 2010 IITP RAS
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation;
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * This is a proof of consept script for the Data Collection Framewotk API proposal
++ *
++ * Authors: Pavel Boyko <boyko@iitp.ru>
++ *          Kirill Andreev <andreev@iitp.ru>
++ */
++#pragma once
++
++#include "ns3/object.h"
++#include "ns3/nstime.h"
++
++namespace ns3 {
++
++/**
++ * \brief Base class for all probes
++ * 
++ * The base class provides general data collection setup, to be used as:
++ * 
++ * Config::SetDefault ("ns3::Probe::Start", TimeValue (Seconds(0)));
++ * Config::SetDefault ("ns3::Probe::Stop",  TimeValue (Seconds (100)));
++ * Config::SetDefault ("ns3::Probe::Period",  TimeValue (Seconds(5)));
++ *
++ * Note that nothing prevents derived classes from neglecting these. 
++ */
++class Probe : public Object
++{
++public:
++  static TypeId GetTypeId ();
++  Probe ();
++  virtual ~Probe ();
++
++protected:
++  /// Start and stop times, periodicity
++  Time m_start, m_stop, m_period;
++};
++
++}
+Index: examples/data-collection/string-probe.cc
+===================================================================
+new file mode 100644
+--- /dev/null
++++ b/examples/data-collection/string-probe.cc
+@@ -0,0 +1,55 @@
++/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
++/*
++ * Copyright (c) 2010 IITP RAS
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation;
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * This is a proof of consept script for the Data Collection Framewotk API proposal
++ *
++ * Authors: Pavel Boyko <boyko@iitp.ru>
++ *          Kirill Andreev <andreev@iitp.ru>
++ */
++
++#include "string-probe.h"
++#include "ns3/trace-source-accessor.h"
++
++namespace ns3 {
++
++NS_OBJECT_ENSURE_REGISTERED (StringProbe);
++
++TypeId 
++StringProbe::GetTypeId ()
++{
++  static TypeId tid = TypeId ("ns3::StringProbe")
++    .SetParent<Probe> ()
++    .AddConstructor<StringProbe> ()
++    .AddTraceSource ("Output",
++         "<Time, String> series output",
++         MakeTraceSourceAccessor (&StringProbe::m_output));
++    ;
++  return tid;
++}
++
++StringProbe::~StringProbe ()
++{
++}
++
++void
++StringProbe::Output (Time t, std::string const & x)
++{
++  m_output (t, x);
++}
++
++
++}
+Index: examples/data-collection/string-probe.h
+===================================================================
+new file mode 100644
+--- /dev/null
++++ b/examples/data-collection/string-probe.h
+@@ -0,0 +1,46 @@
++/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
++/*
++ * Copyright (c) 2010 IITP RAS
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation;
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * This is a proof of consept script for the Data Collection Framewotk API proposal
++ *
++ * Authors: Pavel Boyko <boyko@iitp.ru>
++ *          Kirill Andreev <andreev@iitp.ru>
++ */
++#pragma once
++
++#include "probe.h"
++#include "ns3/traced-callback.h"
++
++namespace ns3 {
++
++/**
++ * \brief Base class for all probes collecting strings (as {time, string} series)
++ */
++class StringProbe : public Probe
++{
++public:
++  static TypeId GetTypeId ();
++  virtual ~StringProbe ();
++
++  /// Output (time, string)
++  void Output (Time t, std::string const & x);
++
++private:
++  TracedCallback<Time, std::string const &> m_output;
++};
++
++}//namespace ns3
+Index: examples/data-collection/wscript
+===================================================================
+new file mode 100644
+--- /dev/null
++++ b/examples/data-collection/wscript
+@@ -0,0 +1,5 @@
++## -*- Mode: python; py-indent-offset: 4; indent-tabs-mode: nil; coding: utf-8; -*-
++
++def build(bld):
++    obj = bld.create_ns3_program('data-collection', ['core', 'simulator', 'mobility', 'wifi', 'olsr'])
++    obj.source = ['main.cc', 'probe.cc', 'double-probe.cc', 'count-probe.cc', 'div-probe.cc', 'string-probe.cc', 'attribute-probe.cc', 'csv-collector.cc' ]
+Index: src/applications/v4ping/v4ping.cc
+===================================================================
+--- a/src/applications/v4ping/v4ping.cc
++++ b/src/applications/v4ping/v4ping.cc
+@@ -56,7 +56,15 @@
+                    MakeUintegerChecker<uint32_t> (16))
+     .AddTraceSource ("Rtt",
+ 		     "The rtt calculated by the ping.",
+-		     MakeTraceSourceAccessor (&V4Ping::m_traceRtt));
++		     MakeTraceSourceAccessor (&V4Ping::m_traceRtt))
++    .AddTraceSource ("Rx",
++		     "Rx event of the ping.",
++		     MakeTraceSourceAccessor (&V4Ping::m_traceRx))
++    .AddTraceSource ("Tx",
++		     "Tx event of the ping.",
++		     MakeTraceSourceAccessor (&V4Ping::m_traceTx))
++
++
+     ;
+   return tid;
+ }
+@@ -138,6 +146,7 @@
+ 		      m_sent.erase (i);
+ 		      m_avgRtt.Update (delta.GetMilliSeconds());
+ 		      m_recv++;
++          m_traceRx ();
+ 		      m_traceRtt (delta);
+ 		      
+ 		      if (m_verbose)
+@@ -202,6 +211,7 @@
+   p->AddHeader (header);
+   m_sent.insert (std::make_pair (m_seq - 1, Simulator::Now()));
+   m_socket->Send (p, 0);
++  m_traceTx ();
+   m_next = Simulator::Schedule (m_interval, & V4Ping::Send, this);
+ }
+ 
+Index: src/applications/v4ping/v4ping.h
+===================================================================
+--- a/src/applications/v4ping/v4ping.h
++++ b/src/applications/v4ping/v4ping.h
+@@ -67,6 +67,8 @@
+   Ptr<Socket> m_socket;
+   uint16_t m_seq;
+   TracedCallback<Time> m_traceRtt;
++  TracedCallback<> m_traceRx;
++  TracedCallback<> m_traceTx;
+   /// produce ping-style output if true
+   bool m_verbose;
+   /// received packets counter

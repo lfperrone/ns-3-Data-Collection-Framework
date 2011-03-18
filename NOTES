@@ -1,0 +1,41 @@
+what I want to have is something like:
+
+...
+Probe<int> counter;
+Probe<intArray> values;
+Probe<doubleArray> doubleValues;
+Probe<double> metric;
+
+so that when I declare a probe:
+- I don't have to do anything to define the callback
+to handle those values
+- the Probe class can give me basic stats functions such
+as sample mean, stdev, even histogram
+- the connection between trace source and trace sink is automatic, or
+	rather implicit -> when I declare a Probe, there should be a known
+	Collector which will serve as a trace sink
+
+want to use Config::ConnectWithoutContext so that I can get the traced
+values without additional strings talking about the context of the callback
+
+create a class Probe, from which to derive ProbeInt, ProbeIntArray,
+ProbeDouble, ProbeDoubleArray, etc. Class Probe offers a factory method to
+create instances of specific data types.
+
+the helper will create a probe (source), a collector (sink), hook the two
+up, hook the sink up to the EEM client or configure the sink to spit out
+text to stdout.
+
+the trick will be to figure out how to Config the probe...
+
+remember that when data goes into EEM client, it must be preceded by an
+object identification, and a type identification
+
+
+how can I turn individual probes on and off? 
+the ProbeHelper will have an array of boolean to show which are enabled and
+which are disabled
+
+
+
+
